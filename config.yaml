@@ -1,0 +1,59 @@
+general:
+  mode: test
+  logLevel: INFO
+
+blockchain:
+  network: Ethereum
+  # nodeEndpoint: https://your-node-url.com
+  # gasPriceMultiplier: 1.2
+
+# wallet:
+#   encryptedPrivateKey: ENCRYPTED_KEY
+#   encryptionPassphrase: PASSPHRASE # Caution: Be very careful with this, consider secure methods
+
+dex:
+  - name: DEX1
+    contractAddress: 0x1234...abcd
+    pools: 
+      - token0: USDT
+        token1: USDC
+        pool: 0123JE
+      - token0: DAI
+        token1: USDC
+        pool: 0123JE
+      
+    
+  - name: DEX2
+    contractAddress: 0x5678...efgh
+    pools: 
+      - token0: USDC
+        token1: USDC
+        pool: 0123JE
+      - token0: DAI
+        token1: DAI
+        pool: 0123JE
+    
+
+# arbitrage:
+#   profitThreshold: 0.01
+#   timeLimit: 60
+#   maxGasUsage: 200000
+
+# slippage:
+#   tolerance: 0.01
+
+# fees:
+#   dex1: 0.003
+#   dex2: 0.002
+
+# influxDB:
+#   endpoint: http://localhost:8086
+#   username: your_influxdb_username
+#   password: your_influxdb_password
+
+# grafana:
+#   endpoint: http://localhost:3000
+
+# alerts:
+#   alertThreshold: 0.1
+#   notificationMethod: email
