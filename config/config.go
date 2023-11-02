@@ -5,14 +5,15 @@ import (
 	"github.com/spf13/viper"
 )
 
-// type Token struct {
-// 	Name     string
-// 	Contract string
-// }
+type Token struct {
+	Name     string `yaml:"name"`
+	Contract string `yaml:"address"`
+	Decimals int    `yaml:"decimals"`
+}
 
 type General struct {
 	Mode     string `yaml:"mode"`
-	logLevel string `yaml:"logLevel"`
+	LogLevel string `yaml:"logLevel"`
 }
 
 type Blockchain struct {
@@ -27,15 +28,22 @@ type Pair struct {
 
 type Dex struct {
 	Name     string `yaml:"name"`
-	Contract string `yaml:"contractAddress"`
-	Pairs    []Pair `yaml:"pools"`
+	Contract string `yaml:"contract"`
+	Type     int    `yaml:"type"`
+	Pairs    []Pair `yaml:"pairs"`
+}
+
+type AllowedPairs struct {
+	Token0 string `yaml:"token0"`
+	Token1 string `yaml:"token1"`
 }
 
 type Config struct {
-	Dexes []Dex `yaml:"dex"`
-	// Tokens  []Token
-	Blockchain Blockchain `yaml:"blockchain"`
-	General    General    `yaml:"general"`
+	Dexes        []Dex          `yaml:"dexes"`
+	Tokens       []Token        `yaml:"tokens"`
+	Blockchain   Blockchain     `yaml:"blockchain"`
+	General      General        `yaml:"general"`
+	AllowedPairs []AllowedPairs `yaml:"allowedpairs"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -45,17 +53,15 @@ func LoadConfig() (*Config, error) {
 	if err := v.ReadInConfig(); err != nil {
 		log.Error().Err(err).Msg("unable to read config file")
 	}
-
 	var config Config
 	if err := v.Unmarshal(&config); err != nil {
 		log.Error().Err(err).Msg("unable to unmarshall config file")
 	}
-	networkres := "blockchain network: " + config.Blockchain.Network
-	moderes := "mode: " + config.General.Mode
+	networkres := "Blockchain network: " + config.Blockchain.Network
+	moderes := "Mode: " + config.General.Mode
 	log.Info().Msg(networkres)
 	log.Warn().Msg(moderes)
-	log.Info().Msg("config loaded!")
-
+	log.Info().Msg("Config loaded!")
 	return &config, nil
 
 }
