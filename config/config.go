@@ -37,6 +37,20 @@ type Config struct {
 	Pairs      []Pairs    `yaml:"pairs"`
 }
 
+type EtherscanGasOracleResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Result  struct {
+		LastBlock       string `json:"LastBlock"`
+		SafeGasPrice    string `json:"SafeGasPrice"`
+		ProposeGasPrice string `json:"ProposeGasPrice"`
+		FastGasPrice    string `json:"FastGasPrice"`
+		SuggestBaseFee  string `json:"suggestBaseFee"`
+		GasUsedRatio    string `json:"gasUsedRatio"`
+		// Add other fields if necessary
+	} `json:"result"`
+}
+
 func LoadConfig() (*Config, error) {
 	v := viper.New()
 	v.SetConfigType("yaml")

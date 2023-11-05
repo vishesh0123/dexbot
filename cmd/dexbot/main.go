@@ -1,18 +1,14 @@
 package main
 
 import (
-	"os"
-
 	"dexbot/client"
 	"dexbot/config"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
 func main() {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	log.Info().Msg("Loading configuration")
 	config, _ := config.LoadConfig()
 	log.Info().Msg("Setting up influx db")

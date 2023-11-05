@@ -4,11 +4,16 @@ import (
 	"context"
 	"dexbot/abi"
 	"dexbot/config"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
+	"math/big"
+	"net/http"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -17,6 +22,7 @@ import (
 )
 
 func Connect(conf *config.Config, api api.WriteAPIBlocking) error {
+	calldata := GenerateCalldata(conf)
 	client, err := rpc.Dial("wss://eth-mainnet.g.alchemy.com/v2/zyHryxjXbmPUbfmKbvzj8YDw_5zharB1")
 
 	if err != nil {
@@ -37,7 +43,8 @@ func Connect(conf *config.Config, api api.WriteAPIBlocking) error {
 			// A new block header has arrived, run the necessary function
 			log.Info().Msg("new block mined")
 			fmt.Println(h.Hash().Hex(), "timestamp ", h.Time)
-			go fetchPrice(conf, api)
+			go fetchPrice(conf, api, calldata)
+			go FetchGasPrice(api)
 
 		}
 	}
@@ -48,11 +55,12 @@ func Connect(conf *config.Config, api api.WriteAPIBlocking) error {
 func FetchPriceV3(tick float64, difference int, pair config.Pairs, pool config.Pool, api api.WriteAPIBlocking) (float64, error) {
 
 	price := math.Pow(1.0001, tick) / math.Pow10(difference)
-	p := influxdb2.NewPointWithMeasurement("new").
-		AddTag("exchange", pool.Protocol).
-		AddTag("pair", pair.Token0+"/"+pair.Token1).
-		AddField("price", 1/price)
-	go api.WritePoint(context.Background(), p)
+	// p := influxdb2.NewPointWithMeasurement("new").
+	// 	AddTag("exchange", pool.Protocol).
+	// 	AddTag("pair", pair.Token0+"/"+pair.Token1).
+	// 	AddField("price", 1/price)
+	// go api.WritePoint(context.Background(), p)
+	log.Info().Msg("V3 L")
 	return price, nil
 
 }
@@ -61,120 +69,110 @@ func FetchPriceV2(token0 float64, token1 float64, d0 int, d1 int, pair config.Pa
 	t0 := token0 / math.Pow10(d0)
 	t1 := token1 / math.Pow10(d1)
 	price := t1 / t0
-	p := influxdb2.NewPointWithMeasurement("new").
-		AddTag("exchange", pool.Protocol).
-		AddTag("pair", pair.Token0+"/"+pair.Token1).
-		AddField("price", 1/price)
-	go api.WritePoint(context.Background(), p)
+	// p := influxdb2.NewPointWithMeasurement("new").
+	// 	AddTag("exchange", pool.Protocol).
+	// 	AddTag("pair", pair.Token0+"/"+pair.Token1).
+	// 	AddField("price", 1/price)
+	// go api.WritePoint(context.Background(), p)
+	log.Info().Msg("V2 L")
 	return price, nil
 
 }
 
-func FetchLiquidityV2(token0 float64, token1 float64, d0 int, d1 int, pair config.Pairs, pool config.Pool, api api.WriteAPIBlocking) (float64, error) {
-	t0 := token0 / math.Pow10(d0)
-	t1 := token1 / math.Pow10(d1)
-	liquidity := math.Sqrt(t0 * t1)
-	p := influxdb2.NewPointWithMeasurement("new").
-		AddTag("exchange", pool.Protocol).
-		AddTag("pair", pair.Token0+"/"+pair.Token1).
-		AddField("liquidity", liquidity)
-	go api.WritePoint(context.Background(), p)
-
-	return liquidity, nil
-}
-
-func FetchLiquidityV3(liquidity float64, pair config.Pairs, pool config.Pool, api api.WriteAPIBlocking) (float64, error) {
-	square := liquidity / math.Pow10(int(math.Abs(float64(pair.Decimals0)-float64(pair.Decimals1))))
-	p := influxdb2.NewPointWithMeasurement("new").
-		AddTag("exchange", pool.Protocol).
-		AddTag("pair", pair.Token0+"/"+pair.Token1).
-		AddField("liquidity", square)
-	go api.WritePoint(context.Background(), p)
-	return liquidity, nil
-}
-
-func fetchPrice(conf *config.Config, api api.WriteAPIBlocking) error {
+func fetchPrice(conf *config.Config, api api.WriteAPIBlocking, calldata []abi.Multicall3Call) error {
 	conn, err := ethclient.Dial("wss://eth-mainnet.g.alchemy.com/v2/i6wI8GHx5UD_uyN8jjBXxBDs5UfbGLGM")
 
 	if err != nil {
 		log.Error().Err(err).Msg("Unable to connect ethereum client")
 	}
 
+	multicall, _ := abi.NewMullticall(common.HexToAddress("0xcA11bde05977b3631167028862bE2a173976CA11"), conn)
+
+	res, err := multicall.TryAggregate(nil, false, calldata)
+
+	if err != nil {
+		log.Error().Err(err).Msg("Failed calling via calldata")
+	}
+
+	counter := 0
 	for _, v := range conf.Pairs {
+
 		for _, p := range v.Pools {
+			data := res[counter].ReturnData
 			if p.Type == 1 {
-				pool, _ := abi.NewPool(common.HexToAddress(p.Address), conn)
-				slot, _ := pool.Slot0(nil)
-				tick, _ := slot.Tick.Float64()
-				liquidity, _ := pool.Liquidity(nil)
-				liq, _ := liquidity.Float64()
-				go FetchPriceV3(tick, int(math.Abs(float64(v.Decimals1)-float64(v.Decimals0))), v, p, api)
-				go FetchLiquidityV3(liq, v, p, api)
+				data := data[20:33]
+				tick := float64((int32(int8(data[0]))<<16 | int32(data[1])<<8 | int32(data[2])))
+				go FetchPriceV3(tick, int(math.Abs(float64(v.Decimals0)-float64(v.Decimals1))), v, p, api)
 
 			} else {
-				pool, _ := abi.NewPOOLV2(common.HexToAddress(p.Address), conn)
-				reserves, _ := pool.GetReserves(nil)
-				t0, _ := reserves.Reserve0.Float64()
-				t1, _ := reserves.Reserve1.Float64()
+				t0, _ := new(big.Int).SetBytes(data[0:32]).Float64()
+				t1, _ := new(big.Int).SetBytes(data[32:64]).Float64()
 				go FetchPriceV2(t0, t1, int(v.Decimals0), int(v.Decimals1), v, p, api)
-				go FetchLiquidityV2(t0, t1, int(v.Decimals0), int(v.Decimals1), v, p, api)
 			}
+
+			counter++
 
 		}
 	}
 	return nil
 }
 
-// func calculateTypeOne(prices []*big.Int, decimals []uint8) error {
-// 	for i, v := range prices {
-// 		c, _ := v.Float64()
-// 		FetchPriceV3(c, int(decimals[i]))
-// 	}
-// 	return nil
+func GenerateCalldata(conf *config.Config) []abi.Multicall3Call {
+	// Generates the calldata required for multicall
+	var data []abi.Multicall3Call
 
-// }
+	signature1 := []byte("slot0()")
+	selector1 := crypto.Keccak256(signature1)[:4]
 
-// func calculateTypeTwo(x []*big.Int, y []*big.Int, dx []uint8, dy []uint8) error {
-// 	for i, v := range x {
-// 		t0, _ := v.Float64()
-// 		t1, _ := y[i].Float64()
-// 		FetchPriceV2(t0, t1, int(dx[i]), int(dy[i]))
-// 	}
-// 	return nil
-// }
+	signature2 := []byte("getReserves()")
+	selector2 := crypto.Keccak256(signature2)[:4]
 
-// func Decimals(conf *config.Config) ([]uint8, []uint8, []uint8) {
-// 	var x []uint8
-// 	var y []uint8
-// 	var d []uint8
-// 	for _, v := range conf.Pairs {
-// 		for _, pool := range v.Pools {
-// 			if pool.Type == 1 {
-// 				d = append(d, uint8(math.Abs(float64(v.Decimals0)-float64(v.Decimals1))))
-// 			} else {
-// 				x = append(x, v.Decimals0)
-// 				y = append(y, v.Decimals1)
-// 			}
-// 		}
-// 	}
-// 	return x, y, d
+	for _, v := range conf.Pairs {
+		for _, pool := range v.Pools {
+			var selector []byte
+			if pool.Type == 1 {
+				selector = selector1
+			} else {
+				selector = selector2
+			}
+			data = append(data, abi.Multicall3Call{
+				Target:   common.HexToAddress(pool.Address),
+				CallData: selector,
+			})
+		}
 
-// }
+	}
+	return data
 
-// func ToCommonAddress(conf *config.Config) ([]common.Address, []common.Address) {
-// 	var type1 []common.Address
-// 	var type2 []common.Address
-// 	for _, v := range conf.Pairs {
-// 		for _, pool := range v.Pools {
-// 			if pool.Type == 1 {
-// 				type1 = append(type1, common.HexToAddress(pool.Address))
-// 			} else {
-// 				type2 = append(type2, common.HexToAddress(pool.Address))
-// 			}
+}
 
-// 		}
+func FetchGasPrice(api api.WriteAPIBlocking) error {
+	res, err := http.Get("https://api.etherscan.io/api?module=gastracker&action=gasoracle&apikey=Q3CDHFRFTH5SVSAD6XQQ841JXK65WC7926")
+	if err != nil {
+		log.Error().Err(err).Msg("Failed To call gas tracker api")
+	}
+	defer res.Body.Close()
 
-// 	}
-// 	return type1, type2
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed To Read Body")
+	}
+	var gasOracleResponse config.EtherscanGasOracleResponse
+	if err := json.Unmarshal(body, &gasOracleResponse); err != nil {
+		log.Error().Err(err).Msg("Failed To Unmarshall Body")
+	}
+	p := influxdb2.NewPointWithMeasurement("gas_price").
+		AddTag("Network", "Ethereum").
+		AddField("baseGasFees", gasOracleResponse.Result.SuggestBaseFee).
+		AddField("low_Price", gasOracleResponse.Result.SafeGasPrice).
+		AddField("Avg_Price", gasOracleResponse.Result.ProposeGasPrice).
+		AddField("High_Price", gasOracleResponse.Result.FastGasPrice)
+	go api.WritePoint(context.Background(), p)
+	fmt.Println("Base Gas Price := ", gasOracleResponse.Result.SuggestBaseFee)
+	fmt.Println("Low Price: ", gasOracleResponse.Result.SafeGasPrice)
+	fmt.Println("Avg_price", gasOracleResponse.Result.ProposeGasPrice)
+	fmt.Println("High Price", gasOracleResponse.Result.FastGasPrice)
+	fmt.Println("Network Congestion (Gas Ratios)", gasOracleResponse.Result.GasUsedRatio)
 
-// }
+	return nil
+}
